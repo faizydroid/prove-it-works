@@ -1,0 +1,7 @@
+node_modules/
+.env
+flagsmith.env
+.agents/
+.prove-it-works/
+*.log
+.DS_Store

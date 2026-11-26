@@ -1,0 +1,6 @@
+# Skill scripts run under bash on macOS/Linux/Git Bash; CRLF would break them. Keep everything LF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.mp4 binary
