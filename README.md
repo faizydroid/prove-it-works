@@ -10,7 +10,7 @@ Built solo for [Toggle Wars: The Flagsmith Experimentation Hackathon](https://ww
 - Live experiment: **https://faizydroid.github.io/prove-it-works/** (the headline is the test)
 - The skill: [`skills/prove-it-works/`](skills/prove-it-works/)
 - Demo video: _coming Sunday_
-- Experiment write-up with the real numbers: [`docs/experiment.md`](docs/experiment.md) _(Sunday)_
+- Experiment pre-registration, decision rule and results: [`docs/experiment.md`](docs/experiment.md)
 
 ## Why
 
@@ -108,16 +108,16 @@ Then just ask: *"A/B test the checkout button copy with Flagsmith, success is a 
 
 ## The experiment this repo ran on itself
 
-The landing page in [`site/`](site/) is a real A/B test on real visitors, run with this skill.
+The landing page in [`site/`](site/) is a real A/B test on real visitors, set up with this skill.
+Full pre-registration, decision rule and (on Sunday) results: [`docs/experiment.md`](docs/experiment.md).
 
-- **Hypothesis:** an LLM-written headline beats the human-written one on CTA click-through by ≥20%.
-- **Flag:** `landing_headline` (multivariate). Control = the human headline; variant `ai` = the
-  LLM headline. The headline text *is* the flag value, so copy is remote config.
+- **Hypothesis:** opening with the reader's problem ("Stop guessing which version wins. Let your
+  agent prove it.") beats describing the product ("Run A/B tests from your coding agent.") on
+  click-through to the GitHub repo by at least 20% relative.
+- **Flag:** `landing_headline` (multivariate). The headline text *is* the flag value.
 - **Metric:** `cta_click`, occurrence per identity: did this visitor click "Get the skill" at least once.
-- **Traffic:** `production` environment gets real visitors from the hackathon Discord and social.
-  `development` gets scripted identities from `simulate-traffic.mjs` as the fallback and the demo.
-- **Result:** see [`docs/experiment.md`](docs/experiment.md) on Sunday, with lift, credible interval,
-  win probability and what we did with it.
+- **Traffic:** Production gets real visitors only; our own browsers are excluded with `?internal`.
+  Development has its own experiment for local testing and scripted traffic, never mixed in.
 
 ## Repo layout
 
