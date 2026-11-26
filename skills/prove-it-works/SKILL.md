@@ -19,8 +19,12 @@ Experimentation is the judge; you drive the CLI; a human holds the keys.
 - Every script prints **one JSON line**. Read it. Don't re-fetch what it already told you.
 - `"ok":false` → stop, show the human `error` (and `hint`) verbatim. Don't guess or work around it.
 - **GATE** steps change what users see or what the project contains. Before each, say exactly what
-  will change and wait for an explicit yes. No yes, no action. If `preflight` reports
-  `"production_like":true`, also say "this affects live users" and quote the numbers.
+  will change, **in which environment** (name it), and wait for an explicit yes. No yes, no action.
+- **Production.** Write scripts refuse a production-like environment (Production, prod, live, prd)
+  unless you pass `--confirm-env "<exact name>"`, and refuse any write if that name differs from
+  the environment they resolved. Pass it only after the human approved that environment by name,
+  and say "this affects live users". Every result reports `environment.source`: `config` is
+  `flagsmith.json`, `env` is a `FLAGSMITH_ENVIRONMENT` variable. If that's not what you expected, stop.
 - Never print, copy or commit API keys. Scripts use the CLI's own credentials.
 - One active experiment per flag. The scripts are idempotent; re-run them, don't improvise.
 - Run scripts with `bash <skill>/scripts/<name>.sh` from the app's repo root (where `flagsmith.json` lives).
@@ -52,10 +56,12 @@ timeframe. Confirm the whole plan before step 3.
 ### 3. Create flag, variants, metric, experiment — GATE
 ```
 bash scripts/create-experiment.sh --flag <flag> --control "<value>" --variant <key>="<value>" \
-  --event <event> --name "<experiment name>" --hypothesis "<sentence>" [--rollout 100] [--weight <key>=<pct>]
+  --event <event> --name "<experiment name>" --hypothesis "<sentence>" [--weight <key>=<pct>] [--confirm-env "<name>"]
 ```
-→ `{flag, feature_id, variants:{key:id}, metric_id, experiment_id, status:"created", reused, dashboard}`
-Nothing is served yet. Existing flag/variants/metric/unfinished experiment are reused, not duplicated.
+→ `{flag, feature_id, variants:{key:id}, metric_id, experiment_id, status:"created", reused, environment, dashboard}`
+The experiment is created at 0% rollout, so nothing is served yet: everyone keeps getting control.
+Existing flag/variants/metric/unfinished experiment are reused, not duplicated. The flag and its
+variants are project-wide; the metric and experiment belong to this environment.
 
 ### 4. Instrument the code — GATE (show the diff plan first)
 Follow `references/instrumentation.md` for the app's SDK. Three edits, nothing more:
@@ -66,8 +72,9 @@ Follow `references/instrumentation.md` for the app's SDK. Three edits, nothing m
 Same identifier for flags and events or exposures and conversions can't be joined. Keys stay out of git.
 
 ### 5. Start — GATE
-`bash scripts/start-experiment.sh --id <experiment_id>` → `{status:"running", started_at}`.
-The flag is locked until completion.
+`bash scripts/start-experiment.sh --id <experiment_id> [--rollout 100] [--confirm-env "<name>"]`
+→ `{status:"running", rollout, started_at, environment}`. Starts it, then raises the rollout from
+0% to `--rollout`. Variants are served from this moment. The flag is locked until completion.
 
 ### 6. Traffic
 - Real users: wait. Under 50 identities per variant (or 5 conversions) the verdict is `collecting`.
@@ -92,6 +99,7 @@ Say it in plain words, e.g. "ai converted 11.1% vs 8.0%: +39% lift, 95% interval
 
 ### 8. Roll out — GATE (quote the numbers in the gate text)
 `bash scripts/rollout-winner.sh --id <id> --variant <key>` | `--decision control` | `--decision disable`
+(plus `--confirm-env "<name>"` for production)
 → `{status:"completed", serving, rollback, rollback_file}`
 The script refuses unless `results.sh` names that variant the winner; never on `srm` or `collecting`.
 `--override "<the human's exact words>"` is accepted only for `inconclusive` and is recorded in the
@@ -112,7 +120,8 @@ Don't merge it yourself.
 ### 10. Archive — after the PR merges
 `bash scripts/archive-flag.sh --flag <flag> --pr <number>` → `{archived:true, pr_state:"MERGED", code_references:0}`
 Refuses unless the PR is merged, `git grep` finds no code reference, and no experiment on the flag
-is unfinished. Archive, not delete: the experiment and its history stay.
+is unfinished in any environment (archiving is project-wide). Archive, not delete: the
+experiments and their history stay.
 
 ## Reporting to the human
 After each step, one short paragraph: what changed, the IDs, the dashboard link, what comes next.

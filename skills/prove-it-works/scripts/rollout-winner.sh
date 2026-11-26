@@ -20,13 +20,14 @@
 #    "rollback_file":".prove-it-works/rollback-landing_headline-20261129T1200Z.json","dashboard":"..."}
 . "$(dirname "$0")/_lib.sh"
 
-ID= VARIANT= DECISION= OVERRIDE=
+ID= VARIANT= DECISION= OVERRIDE= CONFIRM_ENV=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --id) ID=$2; shift 2 ;;
     --variant) VARIANT=$2; DECISION=variant; shift 2 ;;
     --decision) DECISION=$2; shift 2 ;;
     --override) OVERRIDE=$2; shift 2 ;;
+    --confirm-env) CONFIRM_ENV=$2; shift 2 ;;
     *) fail "Unknown argument: $1" ;;
   esac
 done
@@ -37,6 +38,7 @@ done
 
 check_cli
 resolve_context
+guard_env "$CONFIRM_ENV"
 PROJECT_ID=$(fsq '.id' project get "$PROJECT")
 EXP="api/v1/environments/$ENV_KEY/experiments/$ID/"
 LINK="$DASHBOARD/project/$PROJECT_ID/environment/$ENV_KEY/experiments/$ID"
@@ -107,6 +109,6 @@ STATUS=$(apiq '.status' "$EXP")
 # What does the flag serve now? enabled + the 100% variant, or control's value, or off.
 SERVING=$(fs flag get "$FLAG" --jq 'if .enabled != true then "off" else ((.variants // []) | map(select(.weight >= 100)) | .[0].key // "control") end')
 
-printf '{"ok":true,"experiment_id":%s,"status":"completed","flag":%s,"decision":%s,"serving":%s,"verdict":%s,"override":%s,"rollback":%s,"rollback_file":%s,"dashboard":%s}\n' \
+printf '{"ok":true,"experiment_id":%s,"status":"completed","flag":%s,"decision":%s,"serving":%s,"verdict":%s,"override":%s,"rollback":%s,"rollback_file":%s,"environment":%s,"dashboard":%s}\n' \
   "$ID" "$(json_str "$FLAG")" "$(json_str "$DECISION")" "$(json_str "$SERVING")" "$(json_str "$VERDICT")" \
-  "$(json_str "$OVERRIDE")" "$(json_str "$ROLLBACK")" "$(json_str "$RB_FILE")" "$(json_str "$LINK")"
+  "$(json_str "$OVERRIDE")" "$(json_str "$ROLLBACK")" "$(json_str "$RB_FILE")" "$(env_json)" "$(json_str "$LINK")"

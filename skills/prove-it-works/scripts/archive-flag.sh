@@ -5,10 +5,11 @@
 #   bash scripts/archive-flag.sh --flag landing_headline --pr 12
 #   bash scripts/archive-flag.sh --flag landing_headline --no-pr      # cleanup landed without a PR
 #
+# Archiving is project-wide: the flag disappears from every environment's dashboard.
 # Refuses unless ALL of:
 #   - the cleanup PR is MERGED (gh), or --no-pr was passed deliberately
 #   - `git grep` finds no reference to the flag in code (docs and *.md are ignored)
-#   - no unfinished experiment is attached to the flag
+#   - no unfinished experiment uses the flag in any environment of the project
 #
 # Output: {"ok":true,"flag":"landing_headline","archived":true,"pr":12,"pr_state":"MERGED","code_references":0}
 . "$(dirname "$0")/_lib.sh"
@@ -39,7 +40,12 @@ fi
 
 # ---- 2. no code still reads the flag -----------------------------------------------------------
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  REFS=$(git grep -I -l -e "$FLAG" -- . ':(exclude)*.md' ':(exclude)docs/**' ':(exclude).prove-it-works/**' ':(exclude)**/flagsmith.json' 2>/dev/null || true)
+  # Skip this skill's own folder when it's installed inside the repo (its examples name flags).
+  SKILL_PREFIX=$(cd "$(dirname "$0")/.." && git rev-parse --show-prefix 2>/dev/null || true)
+  EXCLUDE_SKILL=()
+  [[ -n $SKILL_PREFIX ]] && EXCLUDE_SKILL=(":(top,exclude)${SKILL_PREFIX}**")
+  REFS=$(cd "$(git rev-parse --show-toplevel)" && git grep -I -l -e "$FLAG" -- . ':(exclude)*.md' ':(exclude)docs/**' \
+    ':(exclude).prove-it-works/**' ':(exclude)**/flagsmith.json' "${EXCLUDE_SKILL[@]+"${EXCLUDE_SKILL[@]}"}" 2>/dev/null || true)
   COUNT=$(printf '%s' "$REFS" | grep -c . || true)
   if [[ ${COUNT:-0} -gt 0 ]]; then
     LIST=$(printf '%s' "$REFS" | head -n 10 | tr '\n' ' ')
@@ -49,11 +55,15 @@ else
   COUNT=-1   # not a git checkout: can't check, say so
 fi
 
-# ---- 3. no live experiment on the flag ---------------------------------------------------------
+# ---- 3. no live experiment on the flag, in ANY environment (archiving is project-wide) ------------
 FEATURE_ID=$(fsq '.id' feature get "$FLAG")
 LIST='(if type == "array" then . else .results end)[]?'
-ACTIVE=$(apiq "[$LIST | select(.feature.id == $FEATURE_ID and .status != \"completed\")] | length" "api/v1/environments/$ENV_KEY/experiments/?page_size=200")
-[[ ${ACTIVE:-0} -eq 0 ]] || fail "Refusing: $ACTIVE unfinished experiment(s) still use '$FLAG'." "Complete them with rollout-winner.sh first."
+BUSY=""
+for key in $(fs environment list --jq '.[].api_key'); do
+  n=$(apiq "[$LIST | select(.feature.id == $FEATURE_ID and .status != \"completed\")] | length" "api/v1/environments/$key/experiments/?page_size=200")
+  if [[ ${n:-0} -gt 0 ]]; then BUSY+="${BUSY:+, }$(fsq '.name' environment get "$key") ($n)"; fi
+done
+[[ -z $BUSY ]] || fail "Refusing: unfinished experiment(s) still use '$FLAG' in: $BUSY. Archiving is project-wide." "Complete them with rollout-winner.sh in each environment first."
 
 # ---- 4. archive and verify ---------------------------------------------------------------------
 fs feature update "$FLAG" --archive >/dev/null

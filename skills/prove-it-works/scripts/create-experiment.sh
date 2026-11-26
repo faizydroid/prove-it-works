@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
-# create-experiment.sh — flag + keyed variants + metric + experiment, created but NOT started.
+# create-experiment.sh — flag + keyed variants + metric + experiment. Serves nothing yet.
 #
 #   bash scripts/create-experiment.sh --flag landing_headline \
 #     --control "Run A/B tests from your coding agent." \
-#     --variant ai="Stop guessing which version wins." \
-#     --event cta_click --name "Headline: human vs AI" \
-#     --hypothesis "The AI headline lifts CTA clicks by 20% within a week." \
-#     [--rollout 100] [--weight ai=50] [--metric-name cta_click] [--direction increase]
+#     --variant problem="Stop guessing which version wins. Let your agent prove it." \
+#     --event cta_click --name "Landing headline: problem-led vs product-led" \
+#     --hypothesis "Problem-led copy lifts CTA clicks by 20% relative within three days." \
+#     [--weight problem=50] [--metric-name cta_click] [--direction increase] [--confirm-env "Production"]
+#
+# The experiment is created with its rollout at 0%: Flagsmith applies an experiment's rollout as
+# soon as it is created, so a non-zero rollout here would serve the variants (without recording
+# exposures) before anyone approved the start. start-experiment.sh raises it.
 #
 # Idempotent: an existing flag / variant key / metric name / unfinished experiment is reused,
 # so re-running after a partial failure finishes the job instead of duplicating it.
 #
 # Output (one line):
-#   {"ok":true,"flag":"landing_headline","feature_id":12,"variants":{"ai":34},"metric_id":5,
+#   {"ok":true,"flag":"landing_headline","feature_id":12,"variants":{"problem":34},"metric_id":5,
 #    "experiment_id":7,"status":"created","reused":{"flag":false,"metric":false,"experiment":false},
-#    "dashboard":"https://app.flagsmith.com/project/1/environment/ser.xxx/experiments/7"}
+#    "environment":{"name":"Development","key":"...","source":"config"},"dashboard":"..."}
 . "$(dirname "$0")/_lib.sh"
 
-FLAG= CONTROL= EVENT= NAME= HYPOTHESIS= ROLLOUT=100 METRIC_NAME= DIRECTION=increase
+FLAG= CONTROL= EVENT= NAME= HYPOTHESIS= METRIC_NAME= DIRECTION=increase CONFIRM_ENV=
+ROLLOUT=0
 declare -a VARIANTS=() WEIGHTS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -28,9 +33,10 @@ while [[ $# -gt 0 ]]; do
     --event) EVENT=$2; shift 2 ;;
     --name) NAME=$2; shift 2 ;;
     --hypothesis) HYPOTHESIS=$2; shift 2 ;;
-    --rollout) ROLLOUT=$2; shift 2 ;;
+    --rollout) fail "--rollout moved to start-experiment.sh (experiments are created at 0% so nothing is served before the start)." ;;
     --metric-name) METRIC_NAME=$2; shift 2 ;;
     --direction) DIRECTION=$2; shift 2 ;;
+    --confirm-env) CONFIRM_ENV=$2; shift 2 ;;
     *) fail "Unknown argument: $1" ;;
   esac
 done
@@ -51,6 +57,7 @@ done
 
 check_cli
 resolve_context
+guard_env "$CONFIRM_ENV"
 PROJECT_ID=$(fsq '.id' project get "$PROJECT")
 
 # ---- 1. flag ---------------------------------------------------------------------------------
@@ -116,7 +123,7 @@ mkdir -p "$STATE_DIR"
 printf '{"flag":%s,"feature_id":%s,"variants":%s,"metric_id":%s,"experiment_id":%s,"env":%s,"project_id":%s}\n' \
   "$(json_str "$FLAG")" "$FEATURE_ID" "$VARIANT_MAP" "$METRIC_ID" "$EXP_ID" "$(json_str "$ENV_KEY")" "$PROJECT_ID" > "$STATE_DIR/experiment-$EXP_ID.json"
 
-printf '{"ok":true,"flag":%s,"feature_id":%s,"variants":%s,"metric_id":%s,"experiment_id":%s,"status":%s,"reused":{"flag":%s,"metric":%s,"experiment":%s},"dashboard":%s}\n' \
+printf '{"ok":true,"flag":%s,"feature_id":%s,"variants":%s,"metric_id":%s,"experiment_id":%s,"status":%s,"reused":{"flag":%s,"metric":%s,"experiment":%s},"environment":%s,"dashboard":%s}\n' \
   "$(json_str "$FLAG")" "$FEATURE_ID" "$VARIANT_MAP" "$METRIC_ID" "$EXP_ID" "$(json_str "$STATUS")" \
-  "$REUSED_FLAG" "$REUSED_METRIC" "$REUSED_EXP" \
+  "$REUSED_FLAG" "$REUSED_METRIC" "$REUSED_EXP" "$(env_json)" \
   "$(json_str "$DASHBOARD/project/$PROJECT_ID/environment/$ENV_KEY/experiments/$EXP_ID")"

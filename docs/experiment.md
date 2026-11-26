@@ -94,13 +94,34 @@ FLAGSMITH_ENVIRONMENT=<production client key> bash skills/prove-it-works/scripts
   --control "Run A/B tests from your coding agent." \
   --variant problem="Stop guessing which version wins. Let your agent prove it." \
   --event cta_click --name "Landing headline: problem-led vs product-led" \
-  --hypothesis "Opening with the reader's problem ... by at least 20% relative ..."
-FLAGSMITH_ENVIRONMENT=<production client key> bash skills/prove-it-works/scripts/start-experiment.sh --id 715
+  --hypothesis "Opening with the reader's problem ... by at least 20% relative ..." \
+  --confirm-env Production
+FLAGSMITH_ENVIRONMENT=<production client key> bash skills/prove-it-works/scripts/start-experiment.sh \
+  --id 715 --confirm-env Production
 ```
+
+(Current syntax. `--confirm-env` was added the same night, after these commands first ran; the run
+log above records exactly what happened.)
 
 The instrumentation is the ~70 lines in [`site/app.js`](../site/app.js).
 
 ---
+
+## Run log (append-only, UTC)
+
+- **Nov 26, 18:59** Experiment 715 created in Production: flag `landing_headline`, variant
+  `problem`, metric `cta_click`. The skill version used then created experiments at 100% rollout,
+  and Flagsmith applies an experiment's rollout as soon as it is created. So from 18:59 to 19:07
+  the page already showed both headlines, but recorded no exposures or clicks, because the
+  experiment wasn't running. The URL wasn't public yet, and the only visits were our own headless
+  checks with `?internal`, which send nothing. Fixed in the skill the same night:
+  `create-experiment.sh` now creates at 0%, and `start-experiment.sh` raises the rollout.
+- **19:04** GitHub Pages live at https://faizydroid.github.io/prove-it-works/.
+- **19:07** Experiment started: rollout 100%, split 50/50. The Production warehouse had received
+  0 events.
+- **19:08** Checks: the live page renders the flag's headline in headless Edge (as an internal
+  visit). 30 throwaway flag evaluations split 18 `problem` / 12 `control`, which is consistent with
+  50/50 (two-sided binomial p ≈ 0.36). These evaluations don't record exposures.
 
 ## Results
 

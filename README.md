@@ -80,7 +80,17 @@ the traffic simulator).
   one-line rollback command is printed.
 - `archive-flag.sh` refuses unless the cleanup PR is `MERGED`, `git grep` finds no code reference to
   the flag, and no experiment on the flag is unfinished. It archives; it never deletes.
-- Environments named like production get an extra, louder gate in `SKILL.md`.
+- Write scripts refuse a production-like environment (Production, prod, live, prd) unless the
+  agent passes `--confirm-env "<exact name>"` after the human approved it by name, and refuse any
+  write whose confirmed name differs from the environment they actually resolved. Every result
+  says which environment it touched and where that came from (`flagsmith.json` or an environment
+  variable). This guard exists because a stray `FLAGSMITH_ENVIRONMENT` variable once pointed a test
+  run at Production during development.
+- Experiments are created at 0% rollout and only start serving when `start-experiment.sh` raises
+  it. Flagsmith applies an experiment's rollout as soon as it is created, so creating at 100%
+  would show the variants before anyone approved the start.
+- Archiving is project-wide, so `archive-flag.sh` checks every environment for unfinished
+  experiments, not just the current one.
 - Scripts are idempotent: re-running after a failure reuses the flag, variants, metric and
   experiment instead of duplicating them. Every failure is `{"ok":false,"error":...,"hint":...}`.
 
@@ -123,9 +133,11 @@ Full pre-registration, decision rule and (on Sunday) results: [`docs/experiment.
 
 ```
 skills/prove-it-works/     the skill: SKILL.md, scripts/, references/
-site/                      the landing page under test (GitHub Pages)
+site/                      the landing page under test (served from the gh-pages branch)
 docs/                      experiment write-up, demo-run transcript and token count
 ```
+
+Deploy the site after editing `site/`: `git subtree push --prefix site origin gh-pages`.
 
 ## License
 

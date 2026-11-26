@@ -5,7 +5,8 @@
 #
 # Output (one line):
 #   {"ok":true,"cli":"v2.0.0","user":"me@x.com","project":{"id":1,"name":"toggle-wars"},
-#    "environment":{"key":"ser.xxx","name":"Development","production_like":false},
+#    "environment":{"key":"abc123","name":"Development","source":"config","production_like":false},
+#    (source: config = flagsmith.json, env = FLAGSMITH_ENVIRONMENT, flag = -e)
 #    "warehouse":{"status":"connected","events":1234,"event_names":3},
 #    "dashboard":"https://app.flagsmith.com/project/1/environment/ser.xxx"}
 #
@@ -31,15 +32,14 @@ USER_ID=$(fsq '.identity.email // .identity.username // .email // .user // .iden
 
 resolve_context
 
-PROJECT_ID=$(fsq '.id' project get "$PROJECT")
-PROJECT_NAME=$(fsq '.name' project get "$PROJECT")
-ENV_NAME=$(fsq '.name' environment get "$ENV_KEY")
+IFS=$'\t' read -r PROJECT_ID PROJECT_NAME <<<"$(fs project get "$PROJECT" --jq '"\(.id)\t\(.name)"')"
 PROD_LIKE=$(production_like "$ENV_NAME")
 
 WH_PATH="api/v1/environments/$ENV_KEY/warehouse-connections/"
 WH_COUNT=$(apiq 'length' "$WH_PATH")
 
 if [[ ${WH_COUNT:-0} -eq 0 && $ENABLE_WH == true ]]; then
+  guard_env "${PIW_CONFIRM_ENV:-}"   # creating a warehouse is a write; production needs PIW_CONFIRM_ENV=<name>
   WH_ID=$(apiq '.id' "$WH_PATH" -f warehouse_type=flagsmith -f name=Flagsmith)
   # "Send your first event": flips the card to pending_connection; it becomes connected
   # when the first real event lands (can take a while on the managed warehouse).
@@ -53,7 +53,7 @@ else
   WH_JSON=$(api "$WH_PATH" --jq '.[0] | {status, type: .warehouse_type, events: (.total_events_received // 0), event_names: (.unique_events_count // 0), detail: .status_detail}')
 fi
 
-printf '{"ok":true,"cli":%s,"user":%s,"project":{"id":%s,"name":%s},"environment":{"key":%s,"name":%s,"production_like":%s},"warehouse":%s,"dashboard":%s}\n' \
+printf '{"ok":true,"cli":%s,"user":%s,"project":{"id":%s,"name":%s},"environment":{"key":%s,"name":%s,"source":%s,"production_like":%s},"warehouse":%s,"dashboard":%s}\n' \
   "$(json_str "$CLI_VERSION")" "$(json_str "$USER_ID")" "$PROJECT_ID" "$(json_str "$PROJECT_NAME")" \
-  "$(json_str "$ENV_KEY")" "$(json_str "$ENV_NAME")" "$PROD_LIKE" "$WH_JSON" \
+  "$(json_str "$ENV_KEY")" "$(json_str "$ENV_NAME")" "$(json_str "$ENV_SOURCE")" "$PROD_LIKE" "$WH_JSON" \
   "$(json_str "$DASHBOARD/project/$PROJECT_ID/environment/$ENV_KEY")"
