@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>prove-it-works · A/B tests your coding agent runs end to end</title>
+  <meta name="description" content="An Agent Skill that takes Claude Code, Kiro or any coding agent through a full Flagsmith experiment: flag, metric, traffic, verdict, rollout, cleanup. A human approves every production change." />
+  <meta property="og:title" content="prove-it-works" />
+  <meta property="og:description" content="A/B tests your coding agent runs end to end, with Flagsmith." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <header class="top">
+      <span class="brand">prove-it-works</span>
+      <span class="tag">Flagsmith Agent Skill</span>
+    </header>
+
+    <section class="hero">
+      <!-- The headline is the experiment. Its text is the flag value served by Flagsmith. -->
+      <h1 id="headline" class="headline" aria-live="polite">&nbsp;</h1>
+      <p class="sub">
+        <code>prove-it-works</code> is an Agent Skill that takes Claude Code, Kiro or any coding agent
+        through a complete Flagsmith experiment: flag, metric, traffic, verdict, rollout, cleanup.
+        It stops and asks a human before anything touches production.
+      </p>
+      <p class="cta-row">
+        <a id="cta" class="cta" href="https://github.com/faizydroid/prove-it-works" target="_blank" rel="noopener">
+          Get the skill on GitHub →
+        </a>
+        <span class="hint">MIT · one <code>SKILL.md</code> + six scripts · needs the Flagsmith CLI</span>
+      </p>
+    </section>
+
+    <section class="steps">
+      <h2>The whole job, not one command</h2>
+      <ol>
+        <li><b>Preflight.</b> CLI version, login, project, environment, warehouse. One JSON line.</li>
+        <li><b>Design.</b> What changes, what counts as success, where in the code each lives.</li>
+        <li><b>Create.</b> Multivariate flag, keyed variants, metric, experiment. Not started yet.</li>
+        <li><b>Instrument.</b> Exposure where the user sees it, conversion where success happens.</li>
+        <li><b>Start.</b> Human gate. The flag locks while the experiment runs.</li>
+        <li><b>Traffic.</b> Real users, or scripted identities with the rates printed on the tin.</li>
+        <li><b>Verdict.</b> Lift, credible interval, win probability, sample-ratio check.</li>
+        <li><b>Roll out.</b> Human gate. Refused below 95%, on SRM, or while still collecting.</li>
+        <li><b>Clean up.</b> Delete the losing branch, open the PR.</li>
+        <li><b>Archive.</b> Only after the PR merges and no reference to the flag remains.</li>
+      </ol>
+    </section>
+
+    <section class="term" aria-label="Example output">
+      <div class="term-bar"><span></span><span></span><span></span><em>results.sh --id 42</em></div>
+<pre><code>{"ok":true,"verdict":"winner","winner":"ai","srm_warning":false,
+ "variants":{"control":{"n":312,"conversions":25,"rate":0.080},
+             "ai":{"n":305,"conversions":34,"rate":0.111,
+                   "lift":0.39,"ci":[0.05,0.72],"chance_to_win":0.97}},
+ "next":"rollout-winner.sh --id 42 --variant ai  (asks first)"}</code></pre>
+    </section>
+
+    <footer>
+      <p>
+        This headline is a live A/B test run with
+        <a href="https://docs.flagsmith.com/experimentation/" target="_blank" rel="noopener">Flagsmith Experimentation</a>
+        for the Toggle Wars hackathon. The write-up with the real numbers lands in the repo on Sunday.
+      </p>
+    </footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
