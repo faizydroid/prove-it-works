@@ -29,7 +29,8 @@ Experimentation is the judge; you drive the CLI; a human holds the keys.
 
 ### 1. Preflight (read-only)
 `bash scripts/preflight.sh` → `{cli, user, project, environment:{key,name,production_like}, warehouse:{status}, dashboard}`
-- `warehouse.status` `connected` or `pending_connection`: proceed.
+- `warehouse.status` `created`, `pending_connection` or `connected`: proceed (the first event
+  from the app flips it to connected).
 - `none`: ask the human; with a yes, `bash scripts/preflight.sh --enable-warehouse` creates the
   Flagsmith-managed warehouse (**GATE**). Otherwise send them to
   https://docs.flagsmith.com/experimentation/connect-a-warehouse and stop.
@@ -96,7 +97,8 @@ The script refuses unless `results.sh` names that variant the winner; never on `
 `--override "<the human's exact words>"` is accepted only for `inconclusive` and is recorded in the
 rollback file. It saves the flag state first and prints the one-line rollback. Completion is final:
 results freeze, the flag unlocks, the environment default serves the decision to 100%.
-Verify: `flagsmith flag get <flag> --jq '{enabled,value,variants}'`.
+Verify: `flagsmith eval <flag> --identity <any new id> --json` shows the winner. Unidentified
+requests still get control's value (weights apply per identity), which is why step 9 hardcodes it.
 
 ### 9. Remove the flag from code — GATE (open the PR)
 Hardcode the winner: delete the losing branch and the experiment-flag call; keep conversion

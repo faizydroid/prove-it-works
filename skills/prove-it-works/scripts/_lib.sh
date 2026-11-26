@@ -7,6 +7,7 @@
 # No API payload ever reaches the agent unfiltered; extraction happens here with the CLI's
 # built-in --jq, so the only dependencies are bash and the Flagsmith CLI (v2+).
 set -euo pipefail
+shopt -s inherit_errexit 2>/dev/null || true   # bash 4.4+: failures inside $(...) stop the script too
 
 exec 3>&1   # fd 3 = the real stdout, so fail() is visible even from inside $(...)
 
@@ -31,19 +32,25 @@ need() { command -v "$1" >/dev/null 2>&1 || fail "'$1' is not installed." "${2:-
 trim_err() { tr -d '\r' | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ +| +$//g' | cut -c1-400; }
 
 # fs <cli args...>: run the CLI; on failure, report its (trimmed) stderr and stop.
+# Retries only when the connection was never established (nothing was sent), so it's safe for writes too.
 fs() {
-  local out
-  if ! out=$(flagsmith "$@" 2>"$PIW_TMP/err"); then
+  local out attempt=1
+  while :; do
+    if out=$(flagsmith "$@" 2>"$PIW_TMP/err"); then printf '%s' "$out"; return 0; fi
+    if (( attempt < 3 )) && grep -qE 'dial tcp|TLS handshake timeout|no such host|connection refused' "$PIW_TMP/err"; then
+      sleep $(( attempt * 2 )); attempt=$(( attempt + 1 )); continue
+    fi
     fail "flagsmith ${1:-} ${2:-} failed: $(trim_err <"$PIW_TMP/err")"
-  fi
-  printf '%s' "$out"
+  done
 }
 
 # fsq <jq-expr> <cli args...>: fs with --jq, with surrounding quotes stripped from string results.
+# `|| exit 1` matters: bash doesn't apply `set -e` inside $(...), so without it a failed call would
+# print its error and then hand an empty value to the caller.
 fsq() {
   local expr=$1; shift
   local v
-  v=$(fs "$@" --jq "$expr")
+  v=$(fs "$@" --jq "$expr") || exit 1
   v=${v#\"}; v=${v%\"}
   printf '%s' "$v"
 }

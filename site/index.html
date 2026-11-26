@@ -49,12 +49,12 @@
     </section>
 
     <section class="term" aria-label="Example output">
-      <div class="term-bar"><span></span><span></span><span></span><em>results.sh --id 42</em></div>
-<pre><code>{"ok":true,"verdict":"winner","winner":"ai","srm_warning":false,
- "variants":{"control":{"n":312,"conversions":25,"rate":0.080},
-             "ai":{"n":305,"conversions":34,"rate":0.111,
-                   "lift":0.39,"ci":[0.05,0.72],"chance_to_win":0.97}},
- "next":"rollout-winner.sh --id 42 --variant ai  (asks first)"}</code></pre>
+      <div class="term-bar"><span></span><span></span><span></span><em>results.sh --id 709 · smoke test, 600 simulated users</em></div>
+<pre><code>{"ok":true,"verdict":"winner","winner":"b","srm_warning":false,
+ "variants":{"control":{"n":315,"conversions":33,"rate":0.1048},
+             "b":{"n":285,"conversions":52,"rate":0.1825,
+                  "lift":0.742,"ci":[0.034,1.449],"chance_to_win":0.98}},
+ "reason":"b: 98% chance to beat control (+74% lift, 95% CI +3%..+145%)"}</code></pre>
     </section>
 
     <footer>

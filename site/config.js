@@ -5,8 +5,8 @@ export const CONFIG = {
   // Real visitors (GitHub Pages) land in `production`; everything else (localhost, previews)
   // uses `development`, which is where scripted traffic goes.
   environments: {
-    'faizydroid.github.io': 'REPLACE_WITH_PRODUCTION_CLIENT_KEY',
-    default: 'REPLACE_WITH_DEVELOPMENT_CLIENT_KEY',
+    'faizydroid.github.io': 'hBLGZrbouE5zkSp7dYgWjG', // toggle-wars / Production
+    default: 'dMF4K5LSSqPndCs8DprMKJ', // toggle-wars / Development
   },
   flag: 'landing_headline',
   event: 'cta_click',

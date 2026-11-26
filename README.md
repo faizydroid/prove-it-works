@@ -40,16 +40,30 @@ to ask a human.
 
 ### What the agent sees
 
+Real output from the pipeline smoke test on Flagsmith Cloud (Nov 26): 600 **simulated** users,
+conversion rates set to 8% vs 16% by the simulator. Creating the flag to reading the verdict took
+about four minutes, most of it waiting for events to land.
+
 ```
-$ bash scripts/results.sh --id 42 --refresh
-{"ok":true,"experiment_id":42,"status":"running","flag":"landing_headline","as_of":"2026-11-28T18:05:11Z",
- "is_final":false,"srm_p_value":0.81,"srm_warning":false,
- "variants":{"control":{"n":312,"conversions":25,"rate":0.0801},
-             "ai":{"n":305,"conversions":34,"rate":0.1115,"lift":0.392,"ci":[0.05,0.72],"chance_to_win":0.97}},
- "verdict":"winner","winner":"ai",
- "reason":"ai: 97% chance to beat control (+39% lift, 95% CI +5%..+72%)",
- "dashboard":"https://app.flagsmith.com/project/1/environment/ser.xxx/experiments/42"}
+$ bash scripts/results.sh --id 709 --refresh
+{"ok":true,"experiment_id":709,"status":"running","flag":"piw_smoke","as_of":"2026-11-26T18:42:23.298084Z",
+ "is_final":false,"srm_p_value":0.2207,"srm_source":"local","srm_warning":false,
+ "variants":{"control":{"n":315,"conversions":33,"rate":0.1048},
+             "b":{"n":285,"conversions":52,"rate":0.1825,"lift":0.742,"ci":[0.034,1.449],"chance_to_win":0.98}},
+ "verdict":"winner","winner":"b",
+ "reason":"b: 98% chance to beat control (+74% lift, 95% CI +3%..+145%)",
+ "dashboard":"https://app.flagsmith.com/project/56671/environment/dMF4K5LSSqPndCs8DprMKJ/experiments/709"}
+
+$ bash scripts/rollout-winner.sh --id 709 --variant b
+{"ok":true,"experiment_id":709,"status":"completed","flag":"piw_smoke","decision":"variant","serving":"b",
+ "verdict":"winner","rollback":"flagsmith flag update piw_smoke --weight b=0",
+ "rollback_file":".prove-it-works/rollback-piw_smoke-20261126T184714Z.json", ...}
 ```
+
+`srm_source: local`: Flagsmith's beta checks the traffic split against the flag's
+environment-default weights, not the experiment's split. Variants added with weight 0 (as
+Flagsmith's own setup prompt does) make that check return nothing. `results.sh` runs the same
+chi-squared test against the experiment's own split instead.
 
 No raw API payloads ever reach the model. Extraction happens inside the scripts with the CLI's
 built-in `--jq`, so the only runtime dependencies are bash and the Flagsmith CLI (Node only for

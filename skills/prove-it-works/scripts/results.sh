@@ -40,8 +40,15 @@ resolve_context
 PROJECT_ID=$(fsq '.id' project get "$PROJECT")
 EXP="api/v1/environments/$ENV_KEY/experiments/$ID/"
 
-STATUS=$(apiq '.status' "$EXP")
-FLAG=$(apiq '.feature.name' "$EXP")
+# One call: status, flag name, and the split the experiment was configured with (for the SRM check).
+META=$(fs api "$EXP" --jq '
+  (.feature.multivariate_options // []) as $o
+  | [(.experiment_rollout.multivariate_feature_state_values // [])[]
+      | .multivariate_feature_option as $id
+      | {key: ([$o[] | select(.id == $id) | .key][0] // "?"), value: (.percentage_allocation / 100)}] as $mv
+  | "\(.status)\t\(.feature.name)\t\(($mv | from_entries) + {control: (1 - ([$mv[].value] | add // 0))} | tojson)"')
+IFS=$'\t' read -r STATUS FLAG EXPECTED <<<"$META"
+[[ $EXPECTED == \{* ]] || EXPECTED='{}'
 [[ $STATUS != created ]] && [[ -n $STATUS ]] || fail "Experiment $ID has not started (status: $STATUS); there are no results yet." "Run start-experiment.sh --id $ID first"
 
 RETRY_JSON=""
@@ -67,40 +74,14 @@ fi
 
 # Pick the metric: --metric <id>, else the experiment's first (primary) metric.
 if [[ -n $METRIC_ID ]]; then
-  PICK="(.results.payload.metrics | map(.metric_id) | index($METRIC_ID)) // 0"
+  [[ $METRIC_ID =~ ^[0-9]+$ ]] || fail "--metric must be a metric id"
+  PICK="def metric_index: ((.results.payload.metrics // []) | map(.metric_id) | index($METRIC_ID)) // 0;"
 else
-  PICK="0"
+  PICK="def metric_index: 0;"
 fi
-
-SUMMARY=$(api "${EXP}results/" --jq "
-  .results as \$r
-  | if \$r == null or \$r.payload == null then
-      {as_of: null, is_final: false, srm_p_value: null, srm_warning: false, variants: {}, verdict: \"no_results\", winner: null,
-       reason: \"No results computed yet. Run with --refresh (allowed every 5 minutes).\"}
-    else
-      (\$r.payload.metrics[($PICK)]) as \$m
-      | (\$m.variants // {}) as \$v
-      | (\$m.inference // {}) as \$inf
-      | (\$v | with_entries(.value |= {n: .n, conversions: (.sum | round), rate: (if .n > 0 then ((.sum / .n * 10000) | round) / 10000 else 0 end)})) as \$base
-      | (\$inf | with_entries(select(.value != null))
-          | with_entries(.value |= {lift: ((.lift * 1000) | round) / 1000,
-                                    ci: [((.ci_low * 1000) | round) / 1000, ((.ci_high * 1000) | round) / 1000],
-                                    chance_to_win: ((.chance_to_win * 1000) | round) / 1000})) as \$stats
-      | (\$base | with_entries(.value += (\$stats[.key] // {}))) as \$variants
-      | \$r.payload.srm_p_value as \$srm
-      | (\$srm != null and \$srm < 0.001) as \$srm_bad
-      | (\$stats | to_entries | sort_by(-.value.chance_to_win) | .[0]) as \$best
-      | (if \$srm_bad then \"srm\"
-         elif (\$stats | length) == 0 then \"collecting\"
-         elif \$best.value.chance_to_win >= 0.95 and \$best.value.ci[0] > 0 then \"winner\"
-         elif (\$stats | to_entries | all(.value.chance_to_win <= 0.05 and .value.ci[1] < 0)) then \"control_wins\"
-         else \"inconclusive\" end) as \$verdict
-      | {as_of: \$r.as_of, is_final: \$r.is_final, srm_p_value: \$srm, srm_warning: \$srm_bad, variants: \$variants, verdict: \$verdict,
-         winner: (if \$verdict == \"winner\" then \$best.key elif \$verdict == \"control_wins\" then \"control\" else null end),
-         reason: (if \$verdict == \"srm\" then \"Sample ratio mismatch (p=\(\$srm)): traffic did not split as configured. Do not act on these numbers.\"
-                  elif \$verdict == \"collecting\" then \"Collecting data: each variant needs 50+ identities and 5+ conversions before inference. Identities so far: \(\$variants | to_entries | map(\"\(.key)=\(.value.n)\") | join(\", \")).\"
-                  else \"\(\$best.key): \((\$best.value.chance_to_win * 100) | round)% chance to beat control (\(if \$best.value.lift >= 0 then \"+\" else \"\" end)\((\$best.value.lift * 100) | round)% lift, 95% CI \(if \$best.value.ci[0] >= 0 then \"+\" else \"\" end)\((\$best.value.ci[0] * 100) | round)%..\(if \$best.value.ci[1] >= 0 then \"+\" else \"\" end)\((\$best.value.ci[1] * 100) | round)%)\" end)}
-    end")
+SUMMARY=$(api "${EXP}results/" --jq "$PICK
+def expected: $EXPECTED;
+$(cat "$(dirname "$0")/results.jq")")
 
 INNER=${SUMMARY#\{}; INNER=${INNER%\}}   # splice the jq object into ours
 printf '{"ok":true,"experiment_id":%s,"status":%s,"flag":%s%s,%s,"dashboard":%s}\n' \

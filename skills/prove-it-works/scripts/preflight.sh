@@ -10,7 +10,9 @@
 #    "dashboard":"https://app.flagsmith.com/project/1/environment/ser.xxx"}
 #
 # warehouse.status: connected | pending_connection | created | errored | none
-#   connected / pending_connection -> events are accepted, proceed
+#   created / pending_connection / connected -> events are accepted, proceed
+#            (Cloud environments get a Flagsmith-managed warehouse in "created" state; the first
+#             event from the app moves it to connected)
 #   none  -> no warehouse. Re-run with --enable-warehouse to create the Flagsmith-managed one
 #            (a change to the environment: ask the human first), or follow
 #            https://docs.flagsmith.com/experimentation/connect-a-warehouse
