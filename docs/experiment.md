@@ -122,6 +122,14 @@ The instrumentation is the ~70 lines in [`site/app.js`](../site/app.js).
 - **19:08** Checks: the live page renders the flag's headline in headless Edge (as an internal
   visit). 30 throwaway flag evaluations split 18 `problem` / 12 `control`, which is consistent with
   50/50 (two-sided binomial p ≈ 0.36). These evaluations don't record exposures.
+- **19:35** First real data: 4 exposed visitors (3 `control`, 1 `problem`), at least one
+  `cta_click`. The four wiring checks from the organisers' guide pass: a stable identifier, exposures
+  on both sides, conversions arriving, and a flag that was multivariate from the start.
+- **Nov 27, 10:18** Added a **guardrail** metric, `example_viewed`: the visitor scrolled the example
+  output into view. Expected direction "should not decrease". It is not part of the decision rule
+  above. It's reported next to the result so we notice if a headline wins clicks while fewer people
+  read the page. The page change is the same for both variants and only adds an event. Guardrail
+  data starts at this time, so it covers fewer visitors than the primary metric.
 
 ## Results
 

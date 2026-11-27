@@ -5,3 +5,4 @@ flagsmith.env
 .prove-it-works/
 *.log
 .DS_Store
+demo/
