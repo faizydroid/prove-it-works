@@ -6,3 +6,4 @@ flagsmith.env
 *.log
 .DS_Store
 demo/
+video/
