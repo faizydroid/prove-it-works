@@ -10,6 +10,7 @@ export const CONFIG = {
   },
   flag: 'landing_headline',
   event: 'cta_click',
+  guardrailEvent: 'example_viewed',
   // Shown only if Flagsmith cannot be reached. Same text as control; never recorded as an exposure.
   fallbackHeadline: 'Run A/B tests from your coding agent.',
 };

@@ -9,8 +9,9 @@
 # Guard rails (not negotiable from the command line):
 #   - a variant ships only when results.sh says verdict=winner for THAT variant
 #   - never while "collecting" and never on a sample-ratio mismatch
-#   - --override is accepted only for verdict=inconclusive, must carry the human's reason, and is
-#     written into the rollback file next to the numbers it overrode
+#   - --override is accepted only for verdict=inconclusive or verdict=guardrail (a winner that hurt
+#     a guardrail metric), must carry the human's words, and is written into the rollback file
+#     next to the numbers it overrode
 #   - the pre-rollout flag state is saved first and the one-line rollback command is printed
 # Completing is final: results freeze, the flag unlocks, the environment default serves the decision.
 #
@@ -55,6 +56,7 @@ esac
 RES=$(bash "$(dirname "$0")/results.sh" --id "$ID") || { printf '%s\n' "$RES" >&3; exit 1; }
 [[ $RES =~ \"verdict\":\"([a-z_]+)\" ]] && VERDICT=${BASH_REMATCH[1]} || VERDICT=unknown
 [[ $RES =~ \"winner\":\"([a-z0-9_-]+)\" ]] && WINNER=${BASH_REMATCH[1]} || WINNER=
+[[ $RES =~ \"candidate\":\"([a-z0-9_-]+)\" ]] && CANDIDATE=${BASH_REMATCH[1]} || CANDIDATE=
 [[ $RES =~ \"reason\":\"([^\"]*)\" ]] && REASON=${BASH_REMATCH[1]} || REASON=
 
 if [[ $DECISION == variant ]]; then
@@ -65,6 +67,11 @@ if [[ $DECISION == variant ]]; then
     inconclusive)
       [[ -n $OVERRIDE ]] || fail "Refusing: results are inconclusive, so '$VARIANT' has not been shown to beat control. $REASON" \
         "Keep collecting, or --decision control. If the human explicitly accepts an unproven variant, re-run with --override \"<their exact words>\"."
+      ;;
+    guardrail)
+      [[ $CANDIDATE == "$VARIANT" ]] || fail "Refusing: the primary-metric leader is '$CANDIDATE', not '$VARIANT'. $REASON"
+      [[ -n $OVERRIDE ]] || fail "Refusing: '$VARIANT' won on the primary metric but hurt a guardrail. $REASON" \
+        "Show the human both numbers. Only with their explicit acceptance of the trade-off, re-run with --override \"<their exact words>\"."
       ;;
     collecting|no_results)
       fail "Refusing: not enough data yet ($VERDICT). $REASON" "Keep the experiment running; --override is not accepted here."

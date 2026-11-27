@@ -20,8 +20,10 @@
 #   collecting    under 50 identities or 5 conversions in some variant -> keep running
 #   srm           traffic did not split as configured (p < 0.001) -> do NOT act on these numbers
 #   winner        a variant has >= 95% chance to beat control and its interval excludes 0
+#   guardrail     it would be a winner, but it clearly hurt a guardrail metric -> human decides
 #   control_wins  every variant has <= 5% chance to beat control and its interval excludes 0
 #   inconclusive  anything else -> keep running, or stop and keep control
+# guardrails: [{name, expected:"not_decrease", status: ok|collecting|harmed, harmed_by, variants}]
 . "$(dirname "$0")/_lib.sh"
 
 ID= REFRESH=false METRIC_ID=
@@ -40,15 +42,17 @@ resolve_context
 PROJECT_ID=$(fsq '.id' project get "$PROJECT")
 EXP="api/v1/environments/$ENV_KEY/experiments/$ID/"
 
-# One call: status, flag name, and the split the experiment was configured with (for the SRM check).
+# One call: status, flag name, the configured split (for the SRM check) and the metrics' roles.
 META=$(fs api "$EXP" --jq '
   (.feature.multivariate_options // []) as $o
   | [(.experiment_rollout.multivariate_feature_state_values // [])[]
       | .multivariate_feature_option as $id
       | {key: ([$o[] | select(.id == $id) | .key][0] // "?"), value: (.percentage_allocation / 100)}] as $mv
-  | "\(.status)\t\(.feature.name)\t\(($mv | from_entries) + {control: (1 - ([$mv[].value] | add // 0))} | tojson)"')
-IFS=$'\t' read -r STATUS FLAG EXPECTED <<<"$META"
+  | [(.metrics // [])[] | {id: .metric, name: .metric_name, dir: .expected_direction, direction}] as $mm
+  | "\(.status)\t\(.feature.name)\t\(($mv | from_entries) + {control: (1 - ([$mv[].value] | add // 0))} | tojson)\t\($mm | tojson)"')
+IFS=$'\t' read -r STATUS FLAG EXPECTED MMETA <<<"$META"
 [[ $EXPECTED == \{* ]] || EXPECTED='{}'
+[[ $MMETA == \[* ]] || MMETA='[]'
 [[ $STATUS != created ]] && [[ -n $STATUS ]] || fail "Experiment $ID has not started (status: $STATUS); there are no results yet." "Run start-experiment.sh --id $ID first"
 
 RETRY_JSON=""
@@ -72,15 +76,12 @@ if [[ $REFRESH == true ]]; then
   fi
 fi
 
-# Pick the metric: --metric <id>, else the experiment's first (primary) metric.
-if [[ -n $METRIC_ID ]]; then
-  [[ $METRIC_ID =~ ^[0-9]+$ ]] || fail "--metric must be a metric id"
-  PICK="def metric_index: ((.results.payload.metrics // []) | map(.metric_id) | index($METRIC_ID)) // 0;"
-else
-  PICK="def metric_index: 0;"
-fi
-SUMMARY=$(api "${EXP}results/" --jq "$PICK
+# Judge on --metric <id>, else the first metric expected to increase/decrease (the hypothesis metric).
+# Every other metric is reported as a guardrail.
+[[ -z $METRIC_ID || $METRIC_ID =~ ^[0-9]+$ ]] || fail "--metric must be a metric id"
+SUMMARY=$(api "${EXP}results/" --jq "def primary_metric_id: ${METRIC_ID:-null};
 def expected: $EXPECTED;
+def metric_meta: $MMETA;
 $(cat "$(dirname "$0")/results.jq")")
 
 INNER=${SUMMARY#\{}; INNER=${INNER%\}}   # splice the jq object into ours

@@ -66,6 +66,19 @@ async function main() {
     flagsmith.flushEvents();
   });
 
+  // Guardrail metric, not expected to move: did the visitor scroll far enough to see the example
+  // output? If the winning headline earned clicks but fewer people read the page, we want to know.
+  const example = document.querySelector('.term');
+  if (example && 'IntersectionObserver' in window) {
+    const watcher = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        flagsmith.trackEvent(CONFIG.guardrailEvent);
+        watcher.disconnect();
+      }
+    }, { threshold: 0.5 });
+    watcher.observe(example);
+  }
+
   // Flush anything still buffered if the visitor leaves.
   addEventListener('pagehide', () => flagsmith.flushEvents());
 }

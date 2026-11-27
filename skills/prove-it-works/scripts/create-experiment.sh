@@ -7,6 +7,8 @@
 #     --event cta_click --name "Landing headline: problem-led vs product-led" \
 #     --hypothesis "Problem-led copy lifts CTA clicks by 20% relative within three days." \
 #     [--weight problem=50] [--metric-name cta_click] [--direction increase] [--confirm-env "Production"]
+#     [--guardrail <event>]...   a metric that should NOT drop (attached as "not_decrease");
+#                                re-running with a new --guardrail adds it to the existing experiment
 #
 # The experiment is created with its rollout at 0%: Flagsmith applies an experiment's rollout as
 # soon as it is created, so a non-zero rollout here would serve the variants (without recording
@@ -23,13 +25,14 @@
 
 FLAG= CONTROL= EVENT= NAME= HYPOTHESIS= METRIC_NAME= DIRECTION=increase CONFIRM_ENV=
 ROLLOUT=0
-declare -a VARIANTS=() WEIGHTS=()
+declare -a VARIANTS=() WEIGHTS=() GUARDS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --flag) FLAG=$2; shift 2 ;;
     --control) CONTROL=$2; shift 2 ;;
     --variant) VARIANTS+=("$2"); shift 2 ;;
     --weight) WEIGHTS+=("$2"); shift 2 ;;
+    --guardrail) GUARDS+=("$2"); shift 2 ;;
     --event) EVENT=$2; shift 2 ;;
     --name) NAME=$2; shift 2 ;;
     --hypothesis) HYPOTHESIS=$2; shift 2 ;;
@@ -95,6 +98,22 @@ if [[ -z $METRIC_ID ]]; then
 fi
 [[ $METRIC_ID =~ ^[0-9]+$ ]] || fail "Could not create or find metric '$METRIC_NAME'."
 
+# Guardrail metrics: one occurrence metric per event, named after the event.
+GUARD_JSON="" GUARD_METRICS=""
+declare -a GUARD_IDS=()
+for g in "${GUARDS[@]+"${GUARDS[@]}"}"; do
+  [[ $g != "$EVENT" ]] || fail "--guardrail '$g' is the primary event; pick a metric you don't expect to move."
+  gid=$(apiq "$LIST | select(.name == \"$g\") | .id" "${METRICS_PATH}?page_size=200")
+  if [[ -z $gid ]]; then
+    gid=$(printf '{"name":%s,"aggregation":"occurrence","direction":"up","definition":{"version":1,"event":%s}}' \
+        "$(json_str "$g")" "$(json_str "$g")" | apiq '.id' "$METRICS_PATH" --input -)
+  fi
+  [[ $gid =~ ^[0-9]+$ ]] || fail "Could not create or find guardrail metric '$g'."
+  GUARD_IDS+=("$gid")
+  GUARD_JSON+="${GUARD_JSON:+,}$(json_str "$g"):$gid"
+  GUARD_METRICS+=",{\"metric\":$gid,\"expected_direction\":\"not_decrease\"}"
+done
+
 # ---- 4. experiment (created, not started: nothing is served until start-experiment.sh) -----------
 EXP_PATH="api/v1/environments/$ENV_KEY/experiments/"
 REUSED_EXP=true
@@ -111,19 +130,28 @@ if [[ -z $EXP_ID ]]; then
     id=$(printf '%s' "$VARIANT_MAP" | sed -E "s/.*\"$key\":([0-9]+).*/\1/")
     MV_JSON+="${MV_JSON:+,}{\"multivariate_feature_option\":$id,\"percentage_allocation\":$pct}"
   done
-  BODY=$(printf '{"feature":%s,"name":%s,"hypothesis":%s,"metrics":[{"metric":%s,"expected_direction":%s}],"experiment_rollout":{"enabled":true,"rollout_percentage":%s,"feature_state_value":{"type":"string","value":%s},"multivariate_feature_state_values":[%s]}}' \
+  BODY=$(printf '{"feature":%s,"name":%s,"hypothesis":%s,"metrics":[{"metric":%s,"expected_direction":%s}%s],"experiment_rollout":{"enabled":true,"rollout_percentage":%s,"feature_state_value":{"type":"string","value":%s},"multivariate_feature_state_values":[%s]}}' \
     "$FEATURE_ID" "$(json_str "$NAME")" "$(json_str "$HYPOTHESIS")" "$METRIC_ID" "$(json_str "$DIRECTION")" \
-    "$ROLLOUT" "$(json_str "$CONTROL")" "$MV_JSON")
+    "$GUARD_METRICS" "$ROLLOUT" "$(json_str "$CONTROL")" "$MV_JSON")
   EXP_ID=$(printf '%s' "$BODY" | apiq '.id' "$EXP_PATH" --input -)
 fi
 [[ $EXP_ID =~ ^[0-9]+$ ]] || fail "Could not create or find the experiment."
+
+# A reused experiment (even a running one) gets any guardrail it doesn't have yet.
+if [[ $REUSED_EXP == true && ${#GUARD_IDS[@]} -gt 0 ]]; then
+  ATTACHED=$(apiq '[.[].metric] | map(tostring) | join(",")' "${EXP_PATH}${EXP_ID}/metrics/")
+  for gid in "${GUARD_IDS[@]}"; do
+    [[ ",$ATTACHED," == *",$gid,"* ]] && continue
+    printf '{"metric":%s,"expected_direction":"not_decrease"}' "$gid" | api "${EXP_PATH}${EXP_ID}/metrics/" --input - >/dev/null
+  done
+fi
 STATUS=$(apiq '.status' "${EXP_PATH}${EXP_ID}/")
 
 mkdir -p "$STATE_DIR"
 printf '{"flag":%s,"feature_id":%s,"variants":%s,"metric_id":%s,"experiment_id":%s,"env":%s,"project_id":%s}\n' \
   "$(json_str "$FLAG")" "$FEATURE_ID" "$VARIANT_MAP" "$METRIC_ID" "$EXP_ID" "$(json_str "$ENV_KEY")" "$PROJECT_ID" > "$STATE_DIR/experiment-$EXP_ID.json"
 
-printf '{"ok":true,"flag":%s,"feature_id":%s,"variants":%s,"metric_id":%s,"experiment_id":%s,"status":%s,"reused":{"flag":%s,"metric":%s,"experiment":%s},"environment":%s,"dashboard":%s}\n' \
-  "$(json_str "$FLAG")" "$FEATURE_ID" "$VARIANT_MAP" "$METRIC_ID" "$EXP_ID" "$(json_str "$STATUS")" \
+printf '{"ok":true,"flag":%s,"feature_id":%s,"variants":%s,"metric_id":%s,"guardrails":{%s},"experiment_id":%s,"status":%s,"reused":{"flag":%s,"metric":%s,"experiment":%s},"environment":%s,"dashboard":%s}\n' \
+  "$(json_str "$FLAG")" "$FEATURE_ID" "$VARIANT_MAP" "$METRIC_ID" "$GUARD_JSON" "$EXP_ID" "$(json_str "$STATUS")" \
   "$REUSED_FLAG" "$REUSED_METRIC" "$REUSED_EXP" "$(env_json)" \
   "$(json_str "$DASHBOARD/project/$PROJECT_ID/environment/$ENV_KEY/experiments/$EXP_ID")"

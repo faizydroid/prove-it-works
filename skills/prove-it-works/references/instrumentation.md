@@ -1,8 +1,12 @@
 # Instrumenting the app
 
 Three edits per app, in this order. Use the environment key the app already uses for flags; it
-accepts both client-side and server-side keys for events. Keep keys where the app already keeps
-config, never in git.
+accepts both client-side and server-side keys for events. Client-side keys are public by design
+(they ship to every browser) and can live in the app's config. Server-side keys (`ser.…`) and admin
+keys belong in environment variables, never in git.
+
+A browser app loaded without a bundler can import the SDK as an ES module:
+`import flagsmith from 'https://cdn.jsdelivr.net/npm/@flagsmith/flagsmith@12.6.0/index.mjs';`
 
 **Minimum SDK versions that can send events.** Older SDKs silently can't; upgrade or stop.
 

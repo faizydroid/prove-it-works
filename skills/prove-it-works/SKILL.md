@@ -27,7 +27,8 @@ Experimentation is the judge; you drive the CLI; a human holds the keys.
   `flagsmith.json`, `env` is a `FLAGSMITH_ENVIRONMENT` variable. If that's not what you expected, stop.
 - Never print, copy or commit API keys. Scripts use the CLI's own credentials.
 - One active experiment per flag. The scripts are idempotent; re-run them, don't improvise.
-- Run scripts with `bash <skill>/scripts/<name>.sh` from the app's repo root (where `flagsmith.json` lives).
+- `<skill>` is this skill's directory. Run every script as `bash <skill>/scripts/<name>.sh` from
+  the app's repo root (where `flagsmith.json` lives); `scripts/x.sh` below is short for that.
 
 ## Steps
 
@@ -51,14 +52,16 @@ Ask, then wait:
 Propose: flag name (snake_case), control value, each variant `key=value` (keys short, lowercase;
 `control` is reserved), event name (case-sensitive, exactly what the code will send), rollout %
 (default 100), split (default even), and a one-sentence hypothesis: change, metric, expected size,
-timeframe. Confirm the whole plan before step 3.
+timeframe. Suggest one **guardrail**: an event that should *not* drop if the change is good (e.g.
+"saw the pricing table" when testing a headline). Confirm the whole plan before step 3.
 
 ### 3. Create flag, variants, metric, experiment — GATE
 ```
 bash scripts/create-experiment.sh --flag <flag> --control "<value>" --variant <key>="<value>" \
-  --event <event> --name "<experiment name>" --hypothesis "<sentence>" [--weight <key>=<pct>] [--confirm-env "<name>"]
+  --event <event> --name "<experiment name>" --hypothesis "<sentence>" [--guardrail <event>] \
+  [--weight <key>=<pct>] [--confirm-env "<name>"]
 ```
-→ `{flag, feature_id, variants:{key:id}, metric_id, experiment_id, status:"created", reused, environment, dashboard}`
+→ `{flag, feature_id, variants:{key:id}, metric_id, guardrails, experiment_id, status:"created", reused, environment, dashboard}`
 The experiment is created at 0% rollout, so nothing is served yet: everyone keeps getting control.
 Existing flag/variants/metric/unfinished experiment are reused, not duplicated. The flag and its
 variants are project-wide; the metric and experiment belong to this environment.
@@ -69,7 +72,13 @@ Follow `references/instrumentation.md` for the app's SDK. Three edits, nothing m
 - identify the user, then call the **experiment flag** API where the variation is actually seen
   (that call records the exposure) and render by its `value`;
 - track the conversion event where success happens; flush before exit/navigation.
-Same identifier for flags and events or exposures and conversions can't be joined. Keys stay out of git.
+Same identifier for flags and events or exposures and conversions can't be joined. Client-side
+keys are public by design; server-side (`ser.`) and admin keys never go in git.
+
+Ship it: `git switch -c exp/<flag>`, commit, `git push -u origin exp/<flag>`, then
+`gh pr create --title "Experiment <flag>: <one line>" --body "<hypothesis>. Experiment: <dashboard>"`
+(or the repo's usual flow). The experiment measures deployed code, so step 5 waits until the human
+says it's merged and live.
 
 ### 5. Start — GATE
 `bash scripts/start-experiment.sh --id <experiment_id> [--rollout 100] [--confirm-env "<name>"]`
@@ -79,12 +88,13 @@ Same identifier for flags and events or exposures and conversions can't be joine
 ### 6. Traffic
 - Real users: wait. Under 50 identities per variant (or 5 conversions) the verdict is `collecting`.
 - Smoke test / demo, never production:
-  `npm install --prefix scripts` once, then
-  `node scripts/simulate-traffic.mjs --env <client key> --flag <flag> --event <event> --users 400 --rates control=0.08,<key>=0.11`
+  `npm install --prefix <skill>/scripts` once, then
+  `node <skill>/scripts/simulate-traffic.mjs --env <environment.key> --flag <flag> --event <event> --users 400 --rates control=0.08,<key>=0.11`
   It prints `rates_used`; repeat them in any write-up so simulated data is never mistaken for real.
+  Events take about a minute to land: `sleep 60` before the first `--refresh`.
 
 ### 7. Verdict
-`bash scripts/results.sh --id <id> --refresh` → `{as_of, srm_warning, variants:{key:{n,conversions,rate,lift,ci,chance_to_win}}, verdict, winner, reason}`
+`bash scripts/results.sh --id <id> --refresh` → `{as_of, srm_warning, variants:{key:{n,conversions,rate,lift,ci,chance_to_win}}, guardrails:[{name,status}], verdict, winner, reason}`
 Refresh is allowed every 5 minutes; a `retry_after_s` means wait, not loop.
 
 | verdict | do |
@@ -93,7 +103,11 @@ Refresh is allowed every 5 minutes; a `retry_after_s` means wait, not loop.
 | `inconclusive` | wait, or offer the human `--decision control` to stop and keep control |
 | `srm` | traffic didn't split as configured. Do **not** act on the numbers; find the cause |
 | `winner` | step 8 with `--variant <winner>` |
+| `guardrail` | it won, but clearly hurt a guardrail. Show both numbers; ship only with the human's `--override` |
 | `control_wins` | step 8 with `--decision control` |
+
+Check the result **once** at the planned time. Re-checking and stopping at the first good-looking
+number promotes noise to a conclusion. If the interval still spans zero, say so plainly.
 
 Say it in plain words, e.g. "ai converted 11.1% vs 8.0%: +39% lift, 95% interval +5%..+72%, 97% chance it really is better."
 
@@ -102,18 +116,20 @@ Say it in plain words, e.g. "ai converted 11.1% vs 8.0%: +39% lift, 95% interval
 (plus `--confirm-env "<name>"` for production)
 → `{status:"completed", serving, rollback, rollback_file}`
 The script refuses unless `results.sh` names that variant the winner; never on `srm` or `collecting`.
-`--override "<the human's exact words>"` is accepted only for `inconclusive` and is recorded in the
-rollback file. It saves the flag state first and prints the one-line rollback. Completion is final:
+`--override "<the human's exact words>"` is accepted only for `inconclusive` or `guardrail` and is
+recorded in the rollback file. It saves the flag state first and prints the one-line rollback. Completion is final:
 results freeze, the flag unlocks, the environment default serves the decision to 100%.
 Verify: `flagsmith eval <flag> --identity <any new id> --json` shows the winner. Unidentified
 requests still get control's value (weights apply per identity), which is why step 9 hardcodes it.
 
 ### 9. Remove the flag from code — GATE (open the PR)
-Hardcode the winner: delete the losing branch and the experiment-flag call; keep conversion
-tracking only if the product wants the analytics. `git grep -n <flag>` until only docs remain. Then
+Start from the up-to-date default branch (`git switch <default> && git pull`). Hardcode the winner:
+delete the losing branch and the experiment-flag call; keep conversion tracking only if the product
+wants the analytics. `git grep -n <flag>` until only docs remain. Then
 ```
-git switch -c chore/remove-<flag> && git commit -am "Remove <flag>: <winner> at 100% (experiment <id>)" \
-  && gh pr create --fill --body "Experiment: <dashboard>. <reason>"
+git switch -c chore/remove-<flag> && git commit -am "Remove <flag>: <winner> at 100% (experiment <id>)"
+git push -u origin chore/remove-<flag>
+gh pr create --title "Remove <flag>: <winner> won (experiment <id>)" --body "<reason>. Experiment: <dashboard>"
 ```
 Don't merge it yourself.
 
